@@ -35,14 +35,15 @@ void setup() {
   
 // Writing data to memory
   EEPROM.put(0, id_gate);
-  EEPROM.put(16, pass_gate);
+  EEPROM.put(50, pass_gate);
+  getGatePass();
   Serial.println("gate id we just wrote is: "+getGateID());
-  Serial.println("gate password we just wrote is: "+getGatePass());
-
+  Serial.println("gate password we just wrote is: "+readPass);
+  
+//only open and close are used
   server.on( "/open", HTTP_GET, openGate); // Listen for command from andriod
   server.on( "/id", HTTP_POST, sendGateId);
-  server.on( "/off", HTTP_GET, closeGate);    
-  server.on( "/changePass", HTTP_GET, changePassword);
+  server.on( "/close", HTTP_GET, completeCloseGate);   
   server.begin();
   Serial.println("HTTP server started, send gate id ");
 }
@@ -61,23 +62,22 @@ String getGateID()
   return readID;
 }
 
-String getGatePass()
+void getGatePass()
 {
   //Read data from memory
-  EEPROM.get(16, readPass);
-  return readPass;
+  EEPROM.get(50, readPass);  
 }
 
 void openGate()
 {
-  if (server.hasArg("password"))
-  { 
-    Serial.println("Get Gate Pass: ");
-    Serial.print(EEPROM.get(16, readPass));
-    Serial.println("server.arg : ");
-    Serial.print(server.arg("password"));
-    
-    if (server.arg("password") == getGatePass()) // Verify that the correct password is received 
+  if (server.hasArg("idGate") && server.hasArg("password"))
+  {
+    if(server.arg("idGate") == getGateID())
+    {
+    getGatePass();
+    Serial.println("Get Gate Pass: " + readPass);    
+    Serial.println("server.arg : " + server.arg("password"));  
+    if (server.arg("password") == readPass) // Verify that the correct password is received 
     { 
       digitalWrite(ledPin, HIGH); // open gate
       server.send (200, "application/gson; charset=utf-8","true");
@@ -86,39 +86,46 @@ void openGate()
     else 
     {
       Serial.println("Incorrect password.");
-      server.send(203, "text/plain", "false");
+      server.send(200, "application/gson; charset=utf-8", "false");
     }
+    }
+    else{
+       Serial.println("wrong gate");
+       server.send(200, "application/gson; charset=utf-8", "false");
+      }
   }
   else
   {
-    server.send(203, "text/plain", "false");
-   Serial.println("No password received.");
+   server.send(203, "application/gson; charset=utf-8", "false");
+   Serial.println("problem transmission");
   }
 }
 
-void closeGate()
+void simpleCloseGate()
 {
-  digitalWrite(ledPin, LOW); // open gate
-  server.send ( 200, "application/json; charset=utf-8", "true");
+  digitalWrite(ledPin, LOW); // open gate  
   Serial.println("Gate is now closing.");
 }
 
-void changePassword()
+void completeCloseGate()
 {
-  if (server.hasArg("password") && server.hasArg("nPassword") && (getGatePass() != server.arg("nPassword")))
+  getGatePass();
+  if (server.hasArg("password") && server.hasArg("nPassword") && (readPass != server.arg("nPassword")))
   {   
-    if (server.arg("password") == getGatePass()) // Verify that the correct password is received 
-    { 
+    if (server.arg("password") == readPass) // Verify that the correct password is received 
+    {
+      simpleCloseGate(); 
       String newPassword = server.arg("nPassword");
-      EEPROM.put(16, newPassword);
-      Serial.println("gate password we just wrote is: "+getGatePass());
+      EEPROM.put(50, newPassword);
+      getGatePass();
+      Serial.println("gate password we just wrote is: "+readPass);
       server.send(200, "application/json; charset=utf-8", "true");
       Serial.println("You have successfully changed the password");
     }
     else 
     {
       Serial.println("You are not authorised to change the password.");
-      server.send(203, "application/json; charset=utf-8", "false");
+      server.send(200, "application/json; charset=utf-8", "false");
     }
   }
 }
